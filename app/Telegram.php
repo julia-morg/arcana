@@ -69,6 +69,9 @@ class Telegram
             $userName = $update['message']['from']['username'];
         }
 
+        if ($message == '') {
+            return;
+        }
         if (str_starts_with($message, '/')) {
             $result = $this->runCommand($message);
         } else {
