@@ -3,6 +3,6 @@
 use App\Telegram;
 use Illuminate\Support\Facades\Artisan;
 
-Artisan::command('app:telegram', function () {
+Artisan::command('app:polling', function () {
     (new Telegram())->handlePolling();
 });

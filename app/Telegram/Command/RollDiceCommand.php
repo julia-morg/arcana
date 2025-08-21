@@ -4,14 +4,17 @@ namespace App\Telegram\Command;
 
 use App\Telegram\CommandInterface;
 use App\Telegram\Reply;
+use App\Telegram\TgMessage;
 
 abstract class RollDiceCommand implements CommandInterface
 {
     protected int $sides = 4;
 
-    public function run(bool $inGroup): Reply
+    public function run(TgMessage $message): Reply
     {
         $result = random_int(1, $this->sides);
-        return new Reply("Результат броска d{$this->sides}: $result");
+        $username = $message->username;
+        $prefix = ($message->inGroup && $username) ? ('@' . ltrim($username, '@') . ', ') : '';
+        return new Reply($prefix . "результат броска d{$this->sides}: $result");
     }
 }

@@ -4,6 +4,8 @@ namespace App\Telegram;
 
 interface CommandInterface
 {
-    public function run(bool $inGroup): Reply;
+    public const COMMAND = '';
+    public const DESCRIPTION = '';
+    public function run(TgMessage $message): Reply;
 
 }

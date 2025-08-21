@@ -6,6 +6,7 @@ use App\Models\Message;
 use App\Telegram\Command\ArcaneCommand;
 use App\Telegram\CommandInterface;
 use App\Telegram\Reply;
+use App\Telegram\TgMessage;
 use Illuminate\Support\Facades\Log;
 use ReflectionClass;
 use Telegram\Bot\Api;
@@ -14,6 +15,7 @@ use Telegram\Bot\Objects\Update;
 class Telegram
 {
     private Api $api;
+    private ?string $botUsername = null;
     private const OFFSET_FILE = 'storage/app/private/tg_offset.txt';
 
     public function __construct()
@@ -25,28 +27,6 @@ class Telegram
     {
         $update = $this->api->getWebhookUpdate();
         $this->handleUpdate($update);
-    }
-
-    public function handlePolling()
-    {
-        $offset = $this->readOffset();
-        $updates = $this->api->getUpdates(['offset' => $offset + 1]);
-
-        $updatesByChat = [];
-        foreach ($updates as $update) {
-            $chatId = $update['message']['chat']['id'] ?? $update['callback_query']['message']['chat']['id'] ?? null;
-            if ($chatId !== null) {
-                $updatesByChat[$chatId] = $update;
-            }
-        }
-
-        // Обработка последних обновлений в каждом чате
-        foreach ($updatesByChat as $chatId => $update) {
-            var_dump($chatId);
-            $updateId = $update['update_id'];
-            $this->handleUpdate($update);
-            // $this->saveOffset($updateId);
-        }
     }
 
     public function handleUpdate(Update $update)
@@ -61,21 +41,22 @@ class Telegram
             $messageId = $update['callback_query']['id'];
             $userId = $update['callback_query']['from']['id'];
             $userName = $update['callback_query']['from']['username'];
+            $chatType = $update['callback_query']['message']['chat']['type'] ?? 'private';
         } else {
             $message = $update['message']['text'] ?? '';
             $chatId = $update['message']['chat']['id'];
             $messageId = $update['message']['message_id'];
             $userId = $update['message']['from']['id'];
             $userName = $update['message']['from']['username'];
+            $chatType = $update['message']['chat']['type'] ?? 'private';
         }
 
         if ($message == '') {
             return;
         }
-        if (str_starts_with($message, '/')) {
-            $result = $this->runCommand($message);
-        } else {
-            $result = new ArcaneCommand()->handle($message);
+        $isPrivate = ($chatType === 'private');
+        if (!$isPrivate && !isset($update['callback_query']) && !str_starts_with($message, '/')) {
+            return;
         }
 
         $inMsg = Message::updateOrCreate(
@@ -93,9 +74,12 @@ class Telegram
             ]
         );
 
-        if ($result) {
-            Message::updateOrCreate(
-                ['chat_id' => $chatId, 'parent_message_id' => $inMsg->id],
+
+        $result = $this->runCommand($message, !$isPrivate, $userName);
+
+
+        if ($result && $result->text != '') {
+            Message::create(
                 [
                     'chat_id' => $chatId,
                     'direction' => Message::DIRECTION_OUT,
@@ -108,38 +92,42 @@ class Telegram
             );
         }
 
-        if ($result !== null) {
+        if ($result !== null && $result->text != '') {
             $this->sendReply($chatId, $result);
         }
     }
 
-    public function runCommand(string $text): ?Reply
+    public function runCommand(string $text, bool $inGroup, ?string $userName): ?Reply
     {
-        $inGroup = false;
+        $commandName = $this->guessCmdName($text);
+        $commands = $this->getBotCommands();
+        if (!isset($commands[$commandName])) {
+            Log::error('Command not found: ' . $commandName);
+            return null;
+        }
+        $className = $commands[$commandName]['class'];
+        if (!class_exists($className) || !class_implements($className, CommandInterface::class) || !$this->isInstantiable($className)) {
+            Log::error('Invalid command class: ' . $className);
+            return null;
+        }
+        $msg = new TgMessage($inGroup, $userName ?? null, $text);
+        return (new $className)->run($msg);
+    }
+
+    private function guessCmdName(string $text):string
+    {
+        if (!str_starts_with($text, '/')) {
+            return 'arcane';
+        }
+
         if (str_contains($text, '@')) {
             $text = explode('@', $text)[0];
-            $inGroup = true;
         }
-        $result = null;
-        $command = ucfirst(preg_replace('/[^a-zA-Zа-яА-Я0-9]/u', '', $this->toCamelCase($text)));
-        $className = "\App\Telegram\Command\\{$command}Command";
-        if (class_exists($className)
-            && class_implements($className, CommandInterface::class)
-            && $this->isInstantiable($className)) {
-            $result = (new $className)->run($inGroup);
-        } elseif (class_exists($className)) {
-            Log::error($className . ' does not implement ' . CommandInterface::class);
-        } else {
-            Log::error($className . ' not found ');
-        }
-        return $result;
+        $firstToken = explode(' ', trim($text))[0] ?? '';
+        $commandName = ltrim($firstToken, '/');
+        $commandName = strtolower($commandName);
+        return $commandName;
     }
-
-    function toCamelCase(string $input): string
-    {
-        return str_replace(' ', '', ucwords(str_replace('_', ' ', $input)));
-    }
-
 
     private function sendReply(string $chatId, Reply $result)
     {
@@ -148,6 +136,65 @@ class Telegram
             'text' => $result->text,
             'reply_markup' => $result->markup,
         ]);
+    }
+
+    /**
+     * Возвращает список доступных команд бота в формате
+     * [command (без /) => ['class' => FQCN, 'description' => string]]
+     */
+    public function getBotCommands(): array
+    {
+        $directory = app_path('Telegram/Command');
+        if (!is_dir($directory)) {
+            return [];
+        }
+        $files = glob($directory . '/*Command.php') ?: [];
+        $commands = [];
+        foreach ($files as $file) {
+            $base = basename($file, '.php');
+            $classBase = $base;
+            if (!str_ends_with($classBase, 'Command')) {
+                continue;
+            }
+            $className = "App\\Telegram\\Command\\{$classBase}";
+            if (!class_exists($className)) {
+                require_once $file;
+            }
+            if (!class_exists($className)) {
+                continue;
+            }
+            if (!class_implements($className, CommandInterface::class)) {
+                continue;
+            }
+            $name = (string) (constant($className . '::COMMAND') ?? '');
+            $name = strtolower(ltrim($name, '/'));
+            if ($name === '') {
+                continue;
+            }
+            $description = (string) (constant($className . '::DESCRIPTION') ?? '');
+            $commands[$name] = [
+                'class' => $className,
+                'description' => $description,
+            ];
+        }
+        ksort($commands);
+        return $commands;
+    }
+
+    private function getBotUsername(): ?string
+    {
+        if ($this->botUsername !== null) {
+            return $this->botUsername;
+        }
+        try {
+            $me = $this->api->getMe();
+            $username = $me['username'] ?? ($me->username ?? null);
+            $this->botUsername = $username ? ltrim($username, '@') : null;
+        } catch (\Throwable $e) {
+            Log::error('Failed to get bot username: ' . $e->getMessage());
+            $this->botUsername = null;
+        }
+        return $this->botUsername;
     }
 
     function readOffset(): int
@@ -170,5 +217,30 @@ class Telegram
     {
         return (new ReflectionClass($className))->isInstantiable();
     }
+
+
+    public function handlePolling()
+    {
+        $offset = $this->readOffset();
+        $updates = $this->api->getUpdates(['offset' => $offset + 1]);
+
+        $updatesByChat = [];
+        foreach ($updates as $update) {
+            $chatId = $update['message']['chat']['id'] ?? $update['callback_query']['message']['chat']['id'] ?? null;
+            if ($chatId !== null) {
+                $updatesByChat[$chatId] = $update;
+            }
+        }
+
+        // Обработка последних обновлений в каждом чате
+        foreach ($updatesByChat as $chatId => $update) {
+            var_dump($chatId);
+            $updateId = $update['update_id'];
+            $this->handleUpdate($update);
+             $this->saveOffset($updateId);
+        }
+    }
+
+
 
 }

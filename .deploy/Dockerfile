@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
     libmemcached-dev \
+    libicu-dev \
     libzip-dev \
     libpng-dev \
     libonig-dev \
@@ -25,7 +26,7 @@ RUN apt-get update && apt-get install -y \
 RUN apt-get update && apt-get install -y nginx
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg
-RUN docker-php-ext-install  zip mbstring exif pcntl bcmath -j$(nproc) gd intl
+RUN docker-php-ext-install zip mbstring exif pcntl bcmath -j$(nproc) intl
 RUN docker-php-ext-install pdo_mysql
 RUN docker-php-ext-install pdo_pgsql
 RUN docker-php-ext-install opcache
