@@ -42,6 +42,7 @@ class Telegram
             $userId = $update['callback_query']['from']['id'];
             $userName = $update['callback_query']['from']['username'];
             $chatType = $update['callback_query']['message']['chat']['type'] ?? 'private';
+            $messageThreadId = $update['callback_query']['message']['message_thread_id'] ?? null;
         } else {
             $message = $update['message']['text'] ?? '';
             $chatId = $update['message']['chat']['id'];
@@ -49,6 +50,7 @@ class Telegram
             $userId = $update['message']['from']['id'];
             $userName = $update['message']['from']['username'];
             $chatType = $update['message']['chat']['type'] ?? 'private';
+            $messageThreadId = $update['message']['message_thread_id'] ?? null;
         }
 
         if ($message == '') {
@@ -93,7 +95,7 @@ class Telegram
         }
 
         if ($result !== null && $result->text != '') {
-            $this->sendReply($chatId, $result);
+            $this->sendReply($chatId, $result, $messageThreadId ?? null);
         }
     }
 
@@ -129,13 +131,17 @@ class Telegram
         return $commandName;
     }
 
-    private function sendReply(string $chatId, Reply $result)
+    private function sendReply(string $chatId, Reply $result, ?int $messageThreadId = null)
     {
-        $this->api->sendMessage([
+        $params = [
             'chat_id' => $chatId,
             'text' => $result->text,
             'reply_markup' => $result->markup,
-        ]);
+        ];
+        if ($messageThreadId !== null) {
+            $params['message_thread_id'] = $messageThreadId;
+        }
+        $this->api->sendMessage($params);
     }
 
     /**
