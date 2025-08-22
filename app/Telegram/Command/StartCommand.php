@@ -4,10 +4,13 @@ namespace App\Telegram\Command;
 
 use App\Telegram\CommandInterface;
 use App\Telegram\Reply;
+use App\Telegram\TgMessage;
 
 class StartCommand implements CommandInterface
 {
-    public function run(bool $inGroup): Reply
+    public const COMMAND = 'start';
+    public const DESCRIPTION = 'Открыть меню';
+    public function run(TgMessage $message): Reply
     {
         $keyboard = [
             [
