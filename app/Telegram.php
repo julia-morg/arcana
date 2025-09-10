@@ -10,6 +10,7 @@ use App\Telegram\TgMessage;
 use Illuminate\Support\Facades\Log;
 use ReflectionClass;
 use Telegram\Bot\Api;
+use Telegram\Bot\Objects\InlineQuery;
 use Telegram\Bot\Objects\Update;
 
 class Telegram
@@ -31,6 +32,11 @@ class Telegram
 
     public function handleUpdate(Update $update)
     {
+        if ($update->isType('inline_query')) {
+            $this->handleInlineQuery($update->inlineQuery);
+            return;
+        }
+
         if (!isset($update['callback_query']) && !isset($update['message'])) {
             Log::error('not implemented ' . print_r($update, true));
             return;
@@ -144,6 +150,74 @@ class Telegram
         $this->api->sendMessage($params);
     }
 
+    private function handleInlineQuery(InlineQuery $inlineQuery): void
+    {
+        try {
+            $query = trim(($inlineQuery->query));
+            $username = $inlineQuery->from->username;
+
+            $results = $this->buildInlineResults($query, $username);
+            if (empty($results)) {
+                return;
+            }
+
+            $this->api->answerInlineQuery([
+                'inline_query_id' => $inlineQuery->id,
+                'results' => json_encode($results),
+                'is_personal' => true,
+                'cache_time' => 1,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to answer inline query: ' . $e->getMessage());
+        }
+    }
+
+    private function buildInlineResults(string $query, ?string $username): array
+    {
+        $commands = $this->getBotCommands();
+        $preferred = [];
+        $candidate = strtolower(trim($query));
+        if ($candidate !== '') {
+            $candidate = ltrim(explode(' ', $candidate)[0] ?? '', '/');
+            if (isset($commands[$candidate])) {
+                $preferred = [$candidate];
+            }
+        }
+
+        if (empty($preferred)) {
+            foreach (['cookie', 'coin', 'dice'] as $name) {
+                if (isset($commands[$name])) {
+                    $preferred[] = $name;
+                }
+            }
+        }
+
+        $titleMap = [
+            'cookie' => 'Предсказание',
+            'coin' => 'Монетка',
+            'dice' => 'Кубик',
+        ];
+
+        $results = [];
+        foreach ($preferred as $name) {
+            $reply = $this->runCommand('/' . $name, true, $username ?? null);
+            if ($reply === null || ($reply->text ?? '') === '') {
+                continue;
+            }
+            $title = $titleMap[$name] ?? ucfirst($name);
+            $results[] = [
+                'type' => 'article',
+                'id' => substr(md5($name . '|' . ($reply->text ?? '')), 0, 32),
+                'title' => $title,
+                'input_message_content' => [
+                    'message_text' => $reply->text,
+                ],
+                'description' => mb_substr($reply->text, 0, 100),
+            ];
+        }
+        return $results;
+    }
+
     /**
      * Возвращает список доступных команд бота в формате
      * [command (без /) => ['class' => FQCN, 'description' => string]]
@@ -230,20 +304,12 @@ class Telegram
         $offset = $this->readOffset();
         $updates = $this->api->getUpdates(['offset' => $offset + 1]);
 
-        $updatesByChat = [];
         foreach ($updates as $update) {
-            $chatId = $update['message']['chat']['id'] ?? $update['callback_query']['message']['chat']['id'] ?? null;
-            if ($chatId !== null) {
-                $updatesByChat[$chatId] = $update;
-            }
-        }
-
-        // Обработка последних обновлений в каждом чате
-        foreach ($updatesByChat as $chatId => $update) {
-            var_dump($chatId);
-            $updateId = $update['update_id'];
+            $updateId = $update['update_id'] ?? null;
             $this->handleUpdate($update);
-             $this->saveOffset($updateId);
+            if ($updateId !== null) {
+                $this->saveOffset($updateId);
+            }
         }
     }
 

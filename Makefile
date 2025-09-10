@@ -24,4 +24,4 @@ logs: # follow logs
 	docker compose logs -f
 
 sh: # Login into arcana container
-	docker compose -f docker-compose.local.yml exec -it arcana bash || [ $$? -eq 130 ]
+	docker compose exec -it arcana bash || [ $$? -eq 130 ]
