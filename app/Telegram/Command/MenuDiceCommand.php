@@ -8,6 +8,8 @@ use App\Telegram\TgMessage;
 
 class MenuDiceCommand implements CommandInterface
 {
+    public const string COMMAND = 'menu_dice';
+
     public function run(TgMessage $message): Reply
     {
         $keyboard = [

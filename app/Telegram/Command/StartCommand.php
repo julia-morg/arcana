@@ -8,8 +8,8 @@ use App\Telegram\TgMessage;
 
 class StartCommand implements CommandInterface
 {
-    public const COMMAND = 'start';
-    public const DESCRIPTION = 'Открыть меню';
+    public const string COMMAND = 'start';
+    public const string DESCRIPTION = 'Открыть меню';
     public function run(TgMessage $message): Reply
     {
         $keyboard = [

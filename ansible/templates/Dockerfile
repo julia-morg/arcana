@@ -41,18 +41,16 @@ WORKDIR $WORKDIR
 
 RUN rm -Rf /var/www/* && mkdir -p /var/www/html
 
-ADD ./.deploy/config/default.conf /etc/nginx/sites-available/default
-ADD ./.deploy/config/php.ini $PHP_INI_DIR/conf.d/
-ADD ./.deploy/config/supervisord.conf /etc/supervisor/supervisord.conf
-ADD ./.deploy/config/www.conf /usr/local/etc/php-fpm.conf
+COPY ./ansible/templates/php.ini $PHP_INI_DIR/conf.d/
+COPY ./ansible/templates/supervisord.conf /etc/supervisor/supervisord.conf
+COPY ./ansible/templates/www.conf /usr/local/etc/php-fpm.d/www.conf
+COPY ./ansible/templates/entrypoint.sh /usr/local/bin/
 
-COPY ./.deploy/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 COPY . /var/www/html
 
 RUN chmod -R 755 $WORKDIR
 RUN chown -R www-data:www-data $WORKDIR
-EXPOSE 80
-#USER www-data
+
 ENTRYPOINT ["entrypoint.sh"]
 CMD [ "entrypoint" ]

@@ -1,0 +1,53 @@
+- name: Install docker
+  hosts: all
+  become: true
+  tasks:
+    - name: Install required system packages
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - git
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+        state: latest
+        update_cache: true
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Update apt and install docker-ce and docker-compose
+      apt:
+        pkg:
+          - docker-ce
+          - docker-compose
+        state: latest
+        update_cache: true
+
+    - name: Ensure Docker service is enabled and started
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Add admin to Docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Check if user is in docker group
+      ansible.builtin.shell: "id -nG {{ ansible_user }} | grep -q '\\bdocker\\b'"
+      register: docker_group_check
+      failed_when: docker_group_check.rc != 0
+      changed_when: false

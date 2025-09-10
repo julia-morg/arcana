@@ -1,0 +1,65 @@
+- name: Deploy Arcana
+  hosts: all
+  become: true
+
+  vars:
+    work_dir: "/home/{{ ansible_user }}/arcana"
+
+  tasks:
+    - name: Ensure base directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      loop:
+        - "{{ work_dir }}"
+        - "{{ work_dir }}/nginx"
+        - "{{ work_dir }}/arcana"
+
+    - name: Stop services if compose file exists
+      ansible.builtin.stat:
+        path: "{{ work_dir }}/docker-compose.yaml"
+      register: compose_file
+
+    - name: Docker compose down (if exists)
+      ansible.builtin.shell:
+        cmd: "docker compose down"
+        chdir: "{{ work_dir }}"
+      when: compose_file.stat.exists
+
+    - name: Render and copy config files
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      loop:
+        - { src: "{{ playbook_dir }}/../templates/env.tpl",             dest: "{{ work_dir }}/arcana/.env" }
+        - { src: "{{ playbook_dir }}/../templates/nginx.conf",          dest: "{{ work_dir }}/nginx/nginx.conf" }
+        - { src: "{{ playbook_dir }}/../templates/docker-compose.yaml", dest: "{{ work_dir }}/docker-compose.yaml" }
+
+    - name: Sync project files to remote arcana directory
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../"
+        dest: "{{ work_dir }}/arcana/"
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=.idea"
+          - "--exclude=node_modules"
+          - "--exclude=vendor"
+          - "--exclude=storage"
+          - "--exclude=tests"
+          - "--exclude=.env"
+      delegate_to: localhost
+      become: false
+
+    - name: Docker compose up with build
+      ansible.builtin.shell:
+        cmd: "docker compose up --build -d"
+        chdir: "{{ work_dir }}"
+

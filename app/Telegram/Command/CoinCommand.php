@@ -8,8 +8,8 @@ use App\Telegram\TgMessage;
 
 class CoinCommand implements CommandInterface
 {
-    public const COMMAND = 'coin';
-    public const DESCRIPTION = 'Бросить монетку';
+    public const string COMMAND = 'coin';
+    public const string DESCRIPTION = 'Бросить монетку';
     public function run(TgMessage $message): Reply
     {
         $result = random_int(0, 1) ? 'Орёл' : 'Решка';

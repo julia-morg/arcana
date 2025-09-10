@@ -1,52 +1,47 @@
 services:
-    laravel:
+    nginx:
+        image: nginx:1.25
+        container_name: nginx
+        ports:
+            - "${NGINX_HTTP_PORT:-8080}:80"
+        volumes:
+            - ./ansible/templates/nginx.local.conf:/etc/nginx/nginx.conf:ro
+        depends_on:
+            - arcana
+
+    arcana:
+        container_name: arcana
         build:
             context: .
-            dockerfile: .deploy/Dockerfile
+            dockerfile: ansible/templates/Dockerfile
             args:
                 XDEBUG: 1
-        extra_hosts:
-            - 'host.docker.internal:host-gateway'
-        ports:
-            - "8000:80"
         environment:
-            XDEBUG_MODE: 'debug'
-            XDEBUG_CONFIG: 'client_host=host.docker.internal'
-            PHP_IDE_CONFIG: serverName=arcana
+            - APP_ENV=local
+            - XDEBUG_MODE='debug'
+            - XDEBUG_CONFIG='client_host=host.docker.internal'
+            - PHP_IDE_CONFIG=serverName=arcana
+        expose:
+            - "${PHP_FPM_PORT:-9000}"
         volumes:
-            - '.:/var/www/html'
-            - ./.deploy/config/local_php.ini:/usr/local/etc/php/conf.d/99-php.ini
-            - ./.deploy/config/local_php.ini:/usr/local/etc/php-fpm.d/99-php.ini
-        depends_on:
-            - pgsql
-    pgsql:
-        image: 'postgres:15'
-        ports:
-            - '${FORWARD_DB_PORT:-5432}:5432'
+            - .:/var/www/html
+            - ./ansible/templates/local_php.ini:/usr/local/etc/php/conf.d/99-php.ini
+            - ./ansible/templates/local_php.ini:/usr/local/etc/php-fpm.d/99-php.ini
+
+    postgres:
+        image: postgres:17.6
+        container_name: postgres
         environment:
-            PGPASSWORD: dev
-            POSTGRES_DB: dev
-            POSTGRES_USER: dev
-            POSTGRES_PASSWORD: dev
+            POSTGRES_USER: ${DB_USERNAME:-arcana}
+            POSTGRES_PASSWORD: ${DB_PASSWORD:-arcana}
+            POSTGRES_DB: ${DB_DATABASE:-arcana}
+        ports:
+            - "${DB_FORWARD_PORT:-5432}:5432"
         volumes:
             - arcana-pgsql:/var/lib/postgresql/data
-        networks:
-            - sail
-        healthcheck:
-            test:
-                - CMD
-                - pg_isready
-                - '-q'
-                - '-d'
-                - 'dev'
-                - '-U'
-                - 'dev'
-            retries: 3
-            timeout: 5s
 
-networks:
-    sail:
-        driver: bridge
 volumes:
     arcana-pgsql:
         driver: local
+
+

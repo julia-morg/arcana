@@ -9,8 +9,8 @@ use App\Telegram\TgMessage;
 
 class CookieCommand implements CommandInterface
 {
-    public const COMMAND = 'cookie';
-    public const DESCRIPTION = 'Получить предсказание';
+    public const string COMMAND = 'cookie';
+    public const string DESCRIPTION = 'Получить предсказание';
 
     public function run(TgMessage $message): Reply
     {
@@ -26,6 +26,6 @@ class CookieCommand implements CommandInterface
             $mention = $username ? '@' . ltrim($username, '@') : 'вас';
             return new Reply("Предсказание для $mention:\n$prediction");
         }
-        return new Reply("Ваше предсказание:\n$prediction");
+        return new Reply("$prediction");
     }
 }
