@@ -4,7 +4,7 @@ namespace App\Telegram\Command;
 
 class DiceCommand extends RollD6Command
 {
-    public const COMMAND = 'dice';
-    public const DESCRIPTION = 'Бросить кубик';
+    public const string COMMAND = 'dice';
+    public const string DESCRIPTION = 'Бросить кубик';
 
 }

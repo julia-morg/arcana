@@ -23,8 +23,8 @@ class ArcaneCommand implements CommandInterface
     {
         if (str_starts_with($message->text, '/')) {
             $message = !$message->inGroup
-                ? "Напишите ваш вопрос\nРасскажите историю целиком в одном сообщении"
-                : "Эта опция работает только в личных сообщениях. Заходите, поговорим";
+                ? "Напиши вопрос\nРасскажи проблему целиком в одном сообщении"
+                : "Эта опция работает только в личных сообщениях. Заходи, поговорим";
             return new Reply($message);
         } else {
             if ($message->inGroup) {
