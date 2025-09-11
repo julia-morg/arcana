@@ -20,6 +20,7 @@ class Message extends Model
         'user_id',
         'username',
         'message',
+        'is_command',
         'parent_message_id',
         'external_id',
         'received_at',

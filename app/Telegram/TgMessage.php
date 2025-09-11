@@ -7,7 +7,9 @@ class TgMessage
     public function __construct(
         public bool $inGroup,
         public ?string $username,
-        public string $text
+        public string $text,
+        public ?int $chatId = null,
+        public ?int $inMessageId = null
     ) {
     }
 }

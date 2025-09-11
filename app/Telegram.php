@@ -67,6 +67,8 @@ class Telegram
             return;
         }
 
+        $isCommand = str_starts_with($message, '/');
+
         $inMsg = Message::updateOrCreate(
             ['chat_id' => $chatId, 'external_id' => $messageId],
             [
@@ -76,6 +78,7 @@ class Telegram
                 'direction' => Message::DIRECTION_IN,
                 'status' => Message::STATUS_RECEIVED,
                 'message' => $message,
+                'is_command' => $isCommand,
                 'received_at' => now(),
                 'parent_message_id' => null,
                 'external_id' => $messageId,
@@ -83,7 +86,7 @@ class Telegram
         );
 
 
-        $result = $this->runCommand($message, !$isPrivate, $userName);
+        $result = $this->runCommand($message, !$isPrivate, $userName, $chatId, $messageId);
 
 
         if ($result && $result->text != '') {
@@ -105,7 +108,7 @@ class Telegram
         }
     }
 
-    public function runCommand(string $text, bool $inGroup, ?string $userName): ?Reply
+    public function runCommand(string $text, bool $inGroup, ?string $userName, ?int $chatId = null, ?int $inMessageId = null): ?Reply
     {
         $commandName = $this->guessCmdName($text);
         $commands = $this->getBotCommands();
@@ -118,7 +121,7 @@ class Telegram
             Log::error('Invalid command class: ' . $className);
             return null;
         }
-        $msg = new TgMessage($inGroup, $userName ?? null, $text);
+        $msg = new TgMessage($inGroup, $userName ?? null, $text, $chatId, $inMessageId);
         return (new $className)->run($msg);
     }
 
