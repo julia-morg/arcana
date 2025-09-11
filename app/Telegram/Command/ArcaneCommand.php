@@ -12,6 +12,7 @@ class ArcaneCommand implements CommandInterface
 {
     public const COMMAND = 'arcane';
     public const DESCRIPTION = 'Совет оракула';
+    public const INLINE_ENABLED = true;
     private string $prompt = 'Ты - муми-тролль. 
     Мумитроллинг - процесс обратный троллингу. Необходимо говорить человеку по-настоящему приятные, воодушевляющие вещи
     и стараться привести человека в отличное расположение духа.
@@ -24,8 +25,8 @@ class ArcaneCommand implements CommandInterface
     {
         if (str_starts_with($message->text, '/')) {
             $message = !$message->inGroup
-                ? "Напиши вопрос, я постараюсь помочь"
-                : "Эта опция работает только в личных сообщениях. Заходи, поговорим";
+                ? "Напиши, что тебя беспокоит, я постараюсь помочь"
+                : "Напиши мне в личном сообщении, что тебя беспокоит, я постараюсь помочь";
             return new Reply($message);
         } else {
             if ($message->inGroup) {
