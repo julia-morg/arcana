@@ -10,6 +10,7 @@ class CoinCommand implements CommandInterface
 {
     public const string COMMAND = 'coin';
     public const string DESCRIPTION = 'Бросить монетку';
+    public const INLINE_ENABLED = true;
     public function run(TgMessage $message): Reply
     {
         $result = random_int(0, 1) ? 'Орёл' : 'Решка';

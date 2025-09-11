@@ -27,7 +27,7 @@ PROMPT;
     public function handle(): int
     {
         $apiKey = config('services.openai.key') ?? env('OPENAI_API_KEY');
-        $model = config('services.openai.model', 'gpt-4o-mini');
+        $model = config('services.openai.model', 'gpt-5');
         $count = (int) $this->option('count');
         if ($count < 1 || $count > 300) {
             $this->error('Параметр --count должен быть в диапазоне 1..300');

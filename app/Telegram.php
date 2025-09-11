@@ -177,34 +177,34 @@ class Telegram
         $commands = $this->getBotCommands();
         $preferred = [];
         $candidate = strtolower(trim($query));
-        if ($candidate !== '') {
-            $candidate = ltrim(explode(' ', $candidate)[0] ?? '', '/');
-            if (isset($commands[$candidate])) {
-                $preferred = [$candidate];
+        $candidate = $candidate !== '' ? ltrim(explode(' ', $candidate)[0] ?? '', '/') : '';
+        foreach ($commands as $name => $meta) {
+            $className = $meta['class'] ?? null;
+            if ($className === null) {
+                continue;
             }
-        }
-
-        if (empty($preferred)) {
-            foreach (['cookie', 'coin', 'dice'] as $name) {
-                if (isset($commands[$name])) {
-                    $preferred[] = $name;
-                }
+            if (!($className::INLINE_ENABLED)) {
+                continue;
             }
+            if ($candidate !== '' && $name !== $candidate) {
+                continue;
+            }
+            $preferred[] = $name;
         }
-
-        $titleMap = [
-            'cookie' => 'Предсказание',
-            'coin' => 'Монетка',
-            'dice' => 'Кубик',
-        ];
 
         $results = [];
         foreach ($preferred as $name) {
+            $className = $commands[$name]['class'] ?? null;
+            if ($className === null) {
+                continue;
+            }
+
             $reply = $this->runCommand('/' . $name, true, $username ?? null);
             if ($reply === null || ($reply->text ?? '') === '') {
                 continue;
             }
-            $title = $titleMap[$name] ?? ucfirst($name);
+
+            $title = (string) constant($className . '::DESCRIPTION');
             $results[] = [
                 'type' => 'article',
                 'id' => substr(md5($name . '|' . ($reply->text ?? '')), 0, 32),
@@ -212,7 +212,6 @@ class Telegram
                 'input_message_content' => [
                     'message_text' => $reply->text,
                 ],
-                'description' => mb_substr($reply->text, 0, 100),
             ];
         }
         return $results;

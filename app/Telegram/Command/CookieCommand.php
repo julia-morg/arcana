@@ -11,6 +11,7 @@ class CookieCommand implements CommandInterface
 {
     public const string COMMAND = 'cookie';
     public const string DESCRIPTION = 'Получить предсказание';
+    public const INLINE_ENABLED = true;
 
     public function run(TgMessage $message): Reply
     {
