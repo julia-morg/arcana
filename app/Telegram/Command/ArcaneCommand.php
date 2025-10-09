@@ -12,7 +12,6 @@ class ArcaneCommand implements CommandInterface
 {
     public const COMMAND = 'arcane';
     public const DESCRIPTION = 'Совет оракула';
-    public const INLINE_ENABLED = true;
     private string $prompt = 'Ты - муми-тролль. 
     Мумитроллинг - процесс обратный троллингу. Необходимо говорить человеку по-настоящему приятные, воодушевляющие вещи
     и стараться привести человека в отличное расположение духа.

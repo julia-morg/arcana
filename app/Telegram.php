@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use ReflectionClass;
 use Telegram\Bot\Api;
 use Telegram\Bot\Objects\InlineQuery;
+use Telegram\Bot\Objects\ChosenInlineResult;
 use Telegram\Bot\Objects\Update;
 
 class Telegram
@@ -34,6 +35,11 @@ class Telegram
     {
         if ($update->isType('inline_query')) {
             $this->handleInlineQuery($update->inlineQuery);
+            return;
+        }
+
+        if ($update->isType('chosen_inline_result')) {
+            $this->handleChosenInlineResult($update->chosenInlineResult);
             return;
         }
 
@@ -157,11 +163,47 @@ class Telegram
     {
         try {
             $query = trim(($inlineQuery->query));
-            $username = $inlineQuery->from->username;
+            $username = $inlineQuery->from->username ?? '';
+
+            // Persist incoming inline query as IN message
+            $commands = $this->getBotCommands();
+            $candidate = strtolower(ltrim(explode(' ', $query)[0] ?? '', '/'));
+            $isCommand = $candidate !== '' && isset($commands[$candidate]);
+            $inMsg = Message::create([
+                'chat_id' => $inlineQuery->from->id, // no chat in inline context, use user id
+                'user_id' => $inlineQuery->from->id,
+                'username' => $username,
+                'direction' => Message::DIRECTION_IN,
+                'status' => Message::STATUS_RECEIVED,
+                'message' => $query,
+                'is_command' => $isCommand,
+                'received_at' => now(),
+                'parent_message_id' => null,
+                'external_id' => $inlineQuery->id,
+            ]);
 
             $results = $this->buildInlineResults($query, $username);
             if (empty($results)) {
                 return;
+            }
+
+            // Persist prepared OUT messages for each inline result
+            foreach ($results as $res) {
+                $resultId = $res['id'] ?? null;
+                $text = $res['input_message_content']['message_text'] ?? null;
+                if ($resultId === null || ($text === null || $text === '')) {
+                    continue;
+                }
+                Message::create([
+                    'chat_id' => $inlineQuery->from->id,
+                    'direction' => Message::DIRECTION_OUT,
+                    'status' => Message::STATUS_PREPARED,
+                    'user_id' => null,
+                    'username' => 'arcana',
+                    'message' => $text,
+                    'parent_message_id' => $inMsg->id,
+                    'external_id' => $resultId,
+                ]);
             }
 
             $this->api->answerInlineQuery([
@@ -172,6 +214,39 @@ class Telegram
             ]);
         } catch (\Throwable $e) {
             Log::error('Failed to answer inline query: ' . $e->getMessage());
+        }
+    }
+
+    private function handleChosenInlineResult(ChosenInlineResult $chosen): void
+    {
+        try {
+            $resultId = $chosen->resultId;
+            // Mark prepared message as SENT when user selects it
+            $prepared = Message::where('external_id', $resultId)
+                ->where('direction', Message::DIRECTION_OUT)
+                ->where('status', Message::STATUS_PREPARED)
+                ->first();
+            if ($prepared) {
+                $prepared->status = Message::STATUS_SENT;
+                $prepared->save();
+            }
+
+            // Also persist a minimal IN record to reflect the selection event
+            $username = $chosen->from->username ?? '';
+            Message::create([
+                'chat_id' => $chosen->from->id,
+                'user_id' => $chosen->from->id,
+                'username' => $username,
+                'direction' => Message::DIRECTION_IN,
+                'status' => Message::STATUS_RECEIVED,
+                'message' => trim($chosen->query ?? ''),
+                'is_command' => false,
+                'received_at' => now(),
+                'parent_message_id' => $prepared->id ?? null,
+                'external_id' => $resultId,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to handle chosen_inline_result: ' . $e->getMessage());
         }
     }
 

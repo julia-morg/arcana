@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('username');
             $table->text('message');
             $table->bigInteger('parent_message_id')->nullable();
-            $table->bigInteger('external_id')->nullable();
+            $table->text('external_id')->nullable();
             $table->timestamp('received_at')->nullable();
             $table->timestamps();
         });
