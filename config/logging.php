@@ -15,6 +15,13 @@ return [
     ],
 
     'channels' => [
+        'req' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/req.log'),
+            'level' => env('LOG_LEVEL', 'info'),
+            'replace_placeholders' => true,
+        ],
+
 
         'console' => [
             'driver' => 'single',

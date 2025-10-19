@@ -4,6 +4,8 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Console\Scheduling\Schedule;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -19,5 +21,19 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->render(function (NotFoundHttpException $e, \Illuminate\Http\Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => 'Not Found'], 404);
+            }
+
+            return response('Not Found', 404);
+        });
+
+        $exceptions->render(function (MethodNotAllowedHttpException $e, \Illuminate\Http\Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['message' => 'Method Not Allowed'], 405);
+            }
+
+            return response('Method Not Allowed', 405);
+        });
     })->create();

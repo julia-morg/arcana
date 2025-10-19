@@ -19,6 +19,7 @@ class Telegram
     private Api $api;
     private ?string $botUsername = null;
     private const OFFSET_FILE = 'storage/app/private/tg_offset.txt';
+    private const INLINE_RESULT_DIR = 'storage/app/private/inline_results';
 
     public function __construct()
     {
@@ -63,6 +64,37 @@ class Telegram
             $userName = $update['message']['from']['username'];
             $chatType = $update['message']['chat']['type'] ?? 'private';
             $messageThreadId = $update['message']['message_thread_id'] ?? null;
+
+            // Fallback for inline results: message posted via our bot
+            $viaBotUsername = $update['message']['via_bot']['username'] ?? null;
+            $botUsername = $this->getBotUsername();
+            if ($viaBotUsername !== null && $botUsername !== null && ltrim(strtolower($viaBotUsername), '@') === strtolower($botUsername)) {
+                $commandName = $this->inferInlineCommandNameFromText($message);
+                $inMsg = Message::create([
+                    'chat_id' => $chatId,
+                    'user_id' => $userId,
+                    'username' => $userName,
+                    'direction' => Message::DIRECTION_IN,
+                    'status' => Message::STATUS_RECEIVED,
+                    'message' => '/' . $commandName,
+                    'is_command' => true,
+                    'received_at' => now(),
+                    'parent_message_id' => null,
+                    'external_id' => null,
+                ]);
+
+                Message::create([
+                    'chat_id' => $chatId,
+                    'direction' => Message::DIRECTION_OUT,
+                    'status' => Message::STATUS_SENT,
+                    'user_id' => null,
+                    'username' => 'arcana',
+                    'message' => $message,
+                    'parent_message_id' => $inMsg->id,
+                    'external_id' => $messageId,
+                ]);
+                return;
+            }
         }
 
         if ($message == '') {
@@ -146,6 +178,22 @@ class Telegram
         return $commandName;
     }
 
+    private function inferInlineCommandNameFromText(string $text): string
+    {
+        $lower = mb_strtolower($text);
+        // Heuristics based on message patterns
+        if (str_contains($lower, 'предсказание для')) {
+            return 'cookie';
+        }
+        if (str_contains($lower, 'результат броска монетки')) {
+            return 'coin';
+        }
+        if (preg_match('/результат броска d\d+: /ui', $lower)) {
+            return 'dice';
+        }
+        return 'arcane';
+    }
+
     private function sendReply(string $chatId, Reply $result, ?int $messageThreadId = null)
     {
         $params = [
@@ -162,48 +210,43 @@ class Telegram
     private function handleInlineQuery(InlineQuery $inlineQuery): void
     {
         try {
-            $query = trim(($inlineQuery->query));
+            $query = trim((string) ($inlineQuery->query ?? ''));
             $username = $inlineQuery->from->username ?? '';
-
-            // Persist incoming inline query as IN message
-            $commands = $this->getBotCommands();
+            // Log invoked inline command as IN when user starts typing (optional): only if query non-empty & is command
             $candidate = strtolower(ltrim(explode(' ', $query)[0] ?? '', '/'));
-            $isCommand = $candidate !== '' && isset($commands[$candidate]);
-            $inMsg = Message::create([
-                'chat_id' => $inlineQuery->from->id, // no chat in inline context, use user id
-                'user_id' => $inlineQuery->from->id,
-                'username' => $username,
-                'direction' => Message::DIRECTION_IN,
-                'status' => Message::STATUS_RECEIVED,
-                'message' => $query,
-                'is_command' => $isCommand,
-                'received_at' => now(),
-                'parent_message_id' => null,
-                'external_id' => $inlineQuery->id,
-            ]);
+            if ($candidate !== '') {
+                // Do not duplicate on repeated typing: use updateOrCreate by (external_id = inlineQuery->id)
+                Message::updateOrCreate(
+                    [
+                        'chat_id' => $inlineQuery->from->id,
+                        'external_id' => $inlineQuery->id,
+                        'direction' => Message::DIRECTION_IN,
+                    ],
+                    [
+                        'user_id' => $inlineQuery->from->id,
+                        'username' => $username,
+                        'status' => Message::STATUS_RECEIVED,
+                        'message' => '/' . $candidate,
+                        'is_command' => true,
+                        'received_at' => now(),
+                        'parent_message_id' => null,
+                    ]
+                );
+            }
 
             $results = $this->buildInlineResults($query, $username);
             if (empty($results)) {
                 return;
             }
 
-            // Persist prepared OUT messages for each inline result
+            // Save prepared results mapping to filesystem (no DB writes)
             foreach ($results as $res) {
                 $resultId = $res['id'] ?? null;
                 $text = $res['input_message_content']['message_text'] ?? null;
                 if ($resultId === null || ($text === null || $text === '')) {
                     continue;
                 }
-                Message::create([
-                    'chat_id' => $inlineQuery->from->id,
-                    'direction' => Message::DIRECTION_OUT,
-                    'status' => Message::STATUS_PREPARED,
-                    'user_id' => null,
-                    'username' => 'arcana',
-                    'message' => $text,
-                    'parent_message_id' => $inMsg->id,
-                    'external_id' => $resultId,
-                ]);
+                $this->saveInlineResultMapping($resultId, $inlineQuery->from->id, $username, $text);
             }
 
             $this->api->answerInlineQuery([
@@ -221,28 +264,58 @@ class Telegram
     {
         try {
             $resultId = $chosen->resultId;
-            // Mark prepared message as SENT when user selects it
-            $prepared = Message::where('external_id', $resultId)
-                ->where('direction', Message::DIRECTION_OUT)
-                ->where('status', Message::STATUS_PREPARED)
-                ->first();
-            if ($prepared) {
-                $prepared->status = Message::STATUS_SENT;
-                $prepared->save();
+            $username = $chosen->from->username ?? '';
+
+            // Resolve selected text from filesystem mapping (preferred)
+            $mapping = $this->consumeInlineResultMapping($resultId);
+            $selectedText = is_array($mapping ?? null) ? ($mapping['text'] ?? null) : null;
+            if ($selectedText === null || $selectedText === '') {
+                // Fallback: try to rebuild (may be non-deterministic)
+                $results = $this->buildInlineResults(trim($chosen->query ?? ''), $username);
+                foreach ($results as $res) {
+                    if (($res['id'] ?? null) === $resultId) {
+                        $selectedText = $res['input_message_content']['message_text'] ?? null;
+                        break;
+                    }
+                }
+            }
+            if ($selectedText === null || $selectedText === '') {
+                Log::warning('Chosen inline result not found for resultId=' . $resultId);
+                return;
             }
 
-            // Also persist a minimal IN record to reflect the selection event
-            $username = $chosen->from->username ?? '';
-            Message::create([
+            // IN: log invoked inline command based on resultId prefix (fallback to query)
+            $invokedName = null;
+            if (str_contains($resultId, ':')) {
+                $invokedName = explode(':', $resultId)[0] ?? null;
+            }
+            if ($invokedName === null || $invokedName === '') {
+                $rawQuery = trim($chosen->query ?? '');
+                $invokedName = strtolower(ltrim(explode(' ', $rawQuery)[0] ?? '', '/')) ?: 'arcane';
+            }
+            $invoked = '/' . $invokedName;
+            $inMsg = Message::create([
                 'chat_id' => $chosen->from->id,
                 'user_id' => $chosen->from->id,
                 'username' => $username,
                 'direction' => Message::DIRECTION_IN,
                 'status' => Message::STATUS_RECEIVED,
-                'message' => trim($chosen->query ?? ''),
-                'is_command' => false,
+                'message' => $invoked,
+                'is_command' => true,
                 'received_at' => now(),
-                'parent_message_id' => $prepared->id ?? null,
+                'parent_message_id' => null,
+                'external_id' => $resultId,
+            ]);
+
+            // OUT: bot posted the selected text
+            Message::create([
+                'chat_id' => $chosen->from->id,
+                'direction' => Message::DIRECTION_OUT,
+                'status' => Message::STATUS_SENT,
+                'user_id' => null,
+                'username' => 'arcana',
+                'message' => $selectedText,
+                'parent_message_id' => $inMsg->id,
                 'external_id' => $resultId,
             ]);
         } catch (\Throwable $e) {
@@ -261,7 +334,7 @@ class Telegram
             if ($className === null) {
                 continue;
             }
-            if (!($className::INLINE_ENABLED)) {
+            if (!defined($className . '::INLINE_ENABLED') || !($className::INLINE_ENABLED)) {
                 continue;
             }
             if ($candidate !== '' && $name !== $candidate) {
@@ -285,7 +358,8 @@ class Telegram
             $title = (string) constant($className . '::DESCRIPTION');
             $results[] = [
                 'type' => 'article',
-                'id' => substr(md5($name . '|' . ($reply->text ?? '')), 0, 32),
+                // include command name to help chosen handler
+                'id' => $name . ':' . substr(md5($name . '|' . ($reply->text ?? '')), 0, 32),
                 'title' => $title,
                 'input_message_content' => [
                     'message_text' => $reply->text,
@@ -293,6 +367,40 @@ class Telegram
             ];
         }
         return $results;
+    }
+
+    private function ensureInlineResultDir(): void
+    {
+        $dir = self::INLINE_RESULT_DIR;
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+    }
+
+    private function saveInlineResultMapping(string $resultId, int $userId, string $username, string $text): void
+    {
+        $this->ensureInlineResultDir();
+        $file = self::INLINE_RESULT_DIR . '/' . $resultId . '.json';
+        $payload = json_encode([
+            'text' => $text,
+            'user_id' => $userId,
+            'username' => $username,
+            'invoked' => explode(':', $resultId)[0] ?? null,
+            'created_at' => time(),
+        ], JSON_UNESCAPED_UNICODE);
+        @file_put_contents($file, $payload, LOCK_EX);
+    }
+
+    private function consumeInlineResultMapping(string $resultId): ?array
+    {
+        $file = self::INLINE_RESULT_DIR . '/' . $resultId . '.json';
+        if (!file_exists($file)) {
+            return null;
+        }
+        $content = @file_get_contents($file);
+        @unlink($file);
+        $data = json_decode($content ?: 'null', true);
+        return is_array($data) ? $data : null;
     }
 
     /**
