@@ -34,6 +34,7 @@ class Telegram
 
     public function handleUpdate(Update $update)
     {
+        
         if ($update->isType('inline_query')) {
             $this->handleInlineQuery($update->inlineQuery);
             return;
@@ -127,7 +128,10 @@ class Telegram
         $result = $this->runCommand($message, !$isPrivate, $userName, $chatId, $messageId);
 
 
-        if ($result && $result->text != '') {
+        if ($result) {
+            $logText = ($result->text ?? '') !== ''
+                ? $result->text
+                : ((($result->photoCaption ?? '') !== '') ? $result->photoCaption : '[photo]');
             Message::create(
                 [
                     'chat_id' => $chatId,
@@ -135,13 +139,13 @@ class Telegram
                     'status' => Message::STATUS_SENT,
                     'user_id' => null,
                     'username' => 'arcana',
-                    'message' => $result->text,
+                    'message' => $logText,
                     'parent_message_id' => $inMsg->id,
                 ]
             );
         }
 
-        if ($result !== null && $result->text != '') {
+        if ($result !== null && (($result->text ?? '') !== '')) {
             $this->sendReply($chatId, $result, $messageThreadId ?? null);
         }
     }
@@ -196,9 +200,98 @@ class Telegram
 
     private function sendReply(string $chatId, Reply $result, ?int $messageThreadId = null)
     {
+        if (($result->photoBytesBase64 ?? '') !== '') {
+            try {
+                $raw = base64_decode($result->photoBytesBase64, true) ?: '';
+                if ($raw === '') {
+                    throw new \RuntimeException('empty_photo_bytes');
+                }
+                $filename = 'meme.' . (($result->photoMime === 'image/png') ? 'png' : 'jpg');
+                $params = [
+                    'chat_id' => $chatId,
+                    'photo' => \Telegram\Bot\FileUpload\InputFile::createFromContents($raw, $filename),
+                ];
+                if (($result->photoCaption ?? '') !== '') {
+                    $params['caption'] = $result->photoCaption;
+                }
+                if ($result->markup !== null) {
+                    $params['reply_markup'] = $result->markup;
+                }
+                if ($messageThreadId !== null) {
+                    $params['message_thread_id'] = $messageThreadId;
+                }
+                $this->api->sendPhoto($params);
+                return;
+            } catch (\Throwable $e) {
+                Log::error('Failed to send photo (bytes)', ['error' => $e->getMessage()]);
+                if (($result->text ?? '') === '' && ($result->photoCaption ?? '') !== '') {
+                    $result = new Reply($result->photoCaption, $result->markup);
+                }
+            }
+        }
+
+        if (($result->photoUrl ?? '') !== '') {
+            try {
+                $params = [
+                    'chat_id' => $chatId,
+                    'photo' => \Telegram\Bot\FileUpload\InputFile::create($result->photoUrl),
+                ];
+                if (($result->photoCaption ?? '') !== '') {
+                    $params['caption'] = $result->photoCaption;
+                }
+                if ($result->markup !== null) {
+                    $params['reply_markup'] = $result->markup;
+                }
+                if ($messageThreadId !== null) {
+                    $params['message_thread_id'] = $messageThreadId;
+                }
+                $this->api->sendPhoto($params);
+                return;
+            } catch (\Throwable $e) {
+                Log::error('Failed to send photo (url)', ['error' => $e->getMessage(), 'url' => $result->photoUrl]);
+                if (($result->text ?? '') === '' && ($result->photoCaption ?? '') !== '') {
+                    $result = new Reply($result->photoCaption, $result->markup);
+                }
+            }
+        }
+
+        if ($result->photoPath !== null && $result->photoPath !== '') {
+            try {
+                if (!is_file($result->photoPath) || !is_readable($result->photoPath)) {
+                    Log::error('Photo not found or not readable', ['path' => $result->photoPath]);
+                    throw new \RuntimeException('photo_not_found');
+                }
+                $params = [
+                    'chat_id' => $chatId,
+                    'photo' => \Telegram\Bot\FileUpload\InputFile::create($result->photoPath),
+                ];
+                if ($result->photoCaption !== null && $result->photoCaption !== '') {
+                    $params['caption'] = $result->photoCaption;
+                }
+                if ($result->markup !== null) {
+                    $params['reply_markup'] = $result->markup;
+                }
+                if ($messageThreadId !== null) {
+                    $params['message_thread_id'] = $messageThreadId;
+                }
+                $this->api->sendPhoto($params);
+                return;
+            } catch (\Throwable $e) {
+                Log::error('Failed to send photo', [
+                    'error' => $e->getMessage(),
+                    'path' => $result->photoPath,
+                ]);
+                // fallback to text reply if available
+                if (($result->text ?? '') === '' && ($result->photoCaption ?? '') !== '') {
+                    $result = new Reply($result->photoCaption, $result->markup);
+                }
+            }
+        }
+
         $params = [
             'chat_id' => $chatId,
             'text' => $result->text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $result->markup,
         ];
         if ($messageThreadId !== null) {
@@ -307,7 +400,23 @@ class Telegram
                 'external_id' => $resultId,
             ]);
 
-            // OUT: bot posted the selected text
+            // Универсально: при выборе inline-результата подменяем на реальный ответ команды
+            try {
+                $reply = $this->runCommand($invoked, true, $username ?? null);
+                $inlineMessageId = $chosen->inlineMessageId ?? null;
+                if ($inlineMessageId && $reply !== null && ($reply->text ?? '') !== '') {
+                    $this->api->editMessageText([
+                        'inline_message_id' => $inlineMessageId,
+                        'text' => $reply->text,
+                        'parse_mode' => 'HTML',
+                    ]);
+                    $selectedText = $reply->text;
+                }
+            } catch (\Throwable $e) {
+                Log::error('Failed to edit inline message to command response: ' . $e->getMessage());
+            }
+
+            // OUT: bot posted the selected text (лог)
             Message::create([
                 'chat_id' => $chosen->from->id,
                 'direction' => Message::DIRECTION_OUT,
@@ -351,18 +460,27 @@ class Telegram
             }
 
             $reply = $this->runCommand('/' . $name, true, $username ?? null);
-            if ($reply === null || ($reply->text ?? '') === '') {
+            if ($reply === null) {
                 continue;
             }
 
             $title = (string) constant($className . '::DESCRIPTION');
+
+
+            $displayText = ($reply->text ?? '') !== ''
+                ? (string) $reply->text
+                : ((($reply->photoCaption ?? '') !== '') ? (string) $reply->photoCaption : $title);
+            if ($displayText === '' || $displayText === null) {
+                $displayText = $title;
+            }
+            $idSalt = (string) $displayText;
             $results[] = [
                 'type' => 'article',
-                // include command name to help chosen handler
-                'id' => $name . ':' . substr(md5($name . '|' . ($reply->text ?? '')), 0, 32),
+                'id' => $name . ':' . substr(md5($name . '|' . $idSalt), 0, 32),
                 'title' => $title,
                 'input_message_content' => [
-                    'message_text' => $reply->text,
+                    'message_text' => (string) $displayText,
+                    'parse_mode' => 'HTML',
                 ],
             ];
         }

@@ -40,4 +40,12 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
     ],
 
+    'memes' => [
+        // список каналов без @
+        'channels' => env('MEME_CHANNELS') ? array_filter(array_map('trim', explode(',', env('MEME_CHANNELS')))) : [
+            'zdes_nedaleko',
+            'stuffihavetodealwith'
+        ],
+    ],
+
 ];

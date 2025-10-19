@@ -11,7 +11,10 @@ deploy: # deploy prod
 fortunes-prod: # fill fortunes on production
 	ssh -i ~/.ssh/my.pem ubuntu@ec2-13-60-197-221.eu-north-1.compute.amazonaws.com "docker exec -i arcana php artisan app:fill-fortunes"
 
-set-commands-prod: # fill fortunes on production
+memes-prod: # fill memes on production
+	ssh -i ~/.ssh/my.pem ubuntu@ec2-13-60-197-221.eu-north-1.compute.amazonaws.com "docker exec -i arcana php artisan app:fill-memes"
+
+set-commands-prod: # set tg bot commands on prod
 	ssh -i ~/.ssh/my.pem ubuntu@ec2-13-60-197-221.eu-north-1.compute.amazonaws.com "docker exec -i arcana php artisan app:set-commands"
 
 up: # up local

@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function (Schedule $schedule) {
         $schedule->command('app:fill-fortunes')->dailyAt('04:00');
+        $schedule->command('app:fill-memes')->dailyAt('04:00');
+        $schedule->command('app:check-memes')->dailyAt('05:00');
     })
     ->withMiddleware(function (Middleware $middleware) {
         //

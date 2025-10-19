@@ -25,6 +25,7 @@ class StartCommand implements CommandInterface
 //                ['text' => 'Прогноз на сегодня', 'callback_data' => 'daily_forecast'],
 //            ],
             [
+                ['text' => 'Мемсказание', 'callback_data' => 'meme_cookie'],
                 ['text' => 'Предсказание', 'callback_data' => 'cookie'],
                 ['text' => 'Совет оракула', 'callback_data' => 'arcane'],
             ],
