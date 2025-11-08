@@ -28,3 +28,24 @@ logs: # follow logs
 
 sh: # Login into arcana container
 	docker compose exec -it arcana bash || [ $$? -eq 130 ]
+
+migrate: # migrate database
+	docker exec -i arcana php artisan migrate --no-interaction --force
+
+webhook: # set webhook
+	docker exec -i arcana php artisan app:set-webhook
+
+fortunes: # fill fortunes
+	docker exec -i arcana php artisan app:fill-fortunes
+
+memes: # fill memes on
+	docker exec -i arcana php artisan app:fill-memes
+
+commands: # set tg bot commands
+	docker exec -i arcana php artisan app:set-commands
+
+polling: # poll updates
+	docker exec -i arcana php artisan app:polling
+
+delete-webhook: # deletes webhook
+	docker exec -i arcana php artisan app:delete-webhook

@@ -14,7 +14,11 @@ abstract class RollDiceCommand implements CommandInterface
     {
         $result = random_int(1, $this->sides);
         $username = $message->username;
-        $prefix = ($message->inGroup && $username) ? ('@' . ltrim($username, '@') . ', ') : '';
+        if(!$message->isInline){
+            return new Reply( "$result");
+        }
+
+        $prefix = $message->isInline ? '' : (($message->inGroup && $username) ? ('@' . ltrim($username, '@') . ', ') : '');
         return new Reply($prefix . "результат броска d{$this->sides}: $result");
     }
 }

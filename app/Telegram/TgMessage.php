@@ -6,6 +6,7 @@ class TgMessage
 {
     public function __construct(
         public bool $inGroup,
+        public bool $isInline,
         public ?string $username,
         public string $text,
         public ?int $chatId = null,

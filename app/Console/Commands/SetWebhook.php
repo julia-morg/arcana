@@ -7,13 +7,16 @@ use Telegram\Bot\Api;
 
 class SetWebhook extends Command
 {
-    protected $signature = 'app:set-webhook {url}';
+    protected $signature = 'app:set-webhook {url?}';
 
     protected $description = 'Установить Telegram webhook на указанный HTTPS URL';
 
     public function handle(): int
     {
         $url = $this->argument('url');
+        if (!$url){
+            $url = env('APP_URL');
+        }
 
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             $this->error('Укажите корректный URL.');

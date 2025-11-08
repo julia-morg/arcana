@@ -15,7 +15,10 @@ class CoinCommand implements CommandInterface
     {
         $result = random_int(0, 1) ? 'Орёл' : 'Решка';
         $username = $message->username;
-        $prefix = ($message->inGroup && $username) ? ('@' . ltrim($username, '@') . ', ') : '';
+        if(!$message->isInline){
+            return new Reply( "$result");
+        }
+        $prefix = $message->isInline ? '' : (($message->inGroup && $username) ? ('@' . ltrim($username, '@') . ', ') : '');
         return new Reply($prefix . "результат броска монетки: $result");
     }
 }

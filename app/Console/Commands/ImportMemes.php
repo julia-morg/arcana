@@ -5,7 +5,6 @@ namespace App\Console\Commands;
 use App\Models\Meme;
 use GuzzleHttp\Client;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Storage;
 
 class ImportMemes extends Command
 {
@@ -23,14 +22,19 @@ class ImportMemes extends Command
             return self::SUCCESS;
         }
 
+        $this->info('Очистка таблицы мемов...');
+        Meme::query()->delete();
+        $this->info('Таблица мемов очищена.');
+
         $client = new Client([
             'base_uri' => 'https://t.me/',
-            'timeout' => 10,
-            'connect_timeout' => 5,
+            'timeout' => 30,
+            'connect_timeout' => 30,
             'headers' => [
                 'User-Agent' => 'Mozilla/5.0 (compatible; ArcanaBot/1.0)'
             ],
         ]);
+        $oneId = $this->option('id');
 
         foreach ($channels as $channel) {
             $this->info('Канал: @' . ltrim($channel, '@'));
@@ -39,29 +43,21 @@ class ImportMemes extends Command
                 $this->warn('  Не удалось получить последний пост');
                 continue;
             }
+            $this->info(" Последний id в канале $latestId");
             $lastInDb = (int) (Meme::where('channel', ltrim($channel, '@'))->max('post_id') ?? 0);
+            $this->info(" Последний id в базе $lastInDb");
             $startId = max(1, $lastInDb + 1);
-            $imported = 0;
-            $oneId = $this->option('id');
-            if ($oneId !== null && is_numeric($oneId)) {
-                $id = (int) $oneId;
-                $ok = $this->importIfSingleImage($client, $channel, $id);
-                $this->line('  Пост #' . $id . ': ' . ($ok ? 'OK' : 'SKIP'));
-                if ($ok) {
-                    $imported++;
-                }
-                $this->info("  Импортировано: {$imported}");
-                continue;
-            }
+            $importedPosts = 0;
+            $importedImages = 0;
 
-            $max = $this->option('max');
-            $limit = (is_numeric($max) && (int)$max > 0) ? (int)$max : PHP_INT_MAX;
-            for ($id = $startId; $id <= $latestId && $imported < $limit; $id++) {
-                if ($this->importIfSingleImage($client, $channel, $id)) {
-                    $imported++;
+            for ($id = $startId; $id <= $latestId; $id++) {
+                $count = $this->importImages($client, $channel, $id);
+                if ($count > 0) {
+                    $importedPosts++;
+                    $importedImages += $count;
                 }
             }
-            $this->info("  Импортировано: {$imported}");
+            $this->info("  Импортировано постов: {$importedPosts}, изображений: {$importedImages}");
         }
 
         return self::SUCCESS;
@@ -81,62 +77,55 @@ class ImportMemes extends Command
             }
             $ids = array_map('intval', $m[1]);
             return empty($ids) ? null : max($ids);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            $this->error($e);
             return null;
         }
     }
 
-    private function importIfSingleImage(Client $client, string $channel, int $postId): bool
+    private function importImages(Client $client, string $channel, int $postId): int
     {
-        $url = 's/' . ltrim($channel, '@') . '/' . $postId;
+        $normalizedChannel = ltrim($channel, '@');
+        $url = 's/' . $normalizedChannel . '/' . $postId;
+
+        $this->info("post # $postId");
         try {
             $resp = $client->get($url, ['http_errors' => false, 'allow_redirects' => true]);
             if ($resp->getStatusCode() !== 200) {
-                return false;
+                $this->info("response code  {$resp->getStatusCode()}, exit");
+                return 0;
             }
+
             $html = (string) $resp->getBody();
-            if (!$this->hasExactlyOneImage($html) || str_contains($html, 'tgme_widget_message_video') || str_contains($html, 'tgme_widget_message_document') || str_contains($html, 'tgme_widget_message_animation')) {
-                return false;
+            if (str_contains($html, 'tgme_widget_message_video')
+                || str_contains($html, 'tgme_widget_message_document')
+                || str_contains($html, 'tgme_widget_message_animation')) {
+                return 0;
+                $this->info(" no images ");
             }
 
-            // Найти URL картинки строго внутри секции поста
-            $imageUrl = $this->extractImageUrl($html, ltrim($channel, '@'), $postId);
-            if ($imageUrl === null) {
-                return false;
+            $imageUrls = $this->extractImageUrls($html, $normalizedChannel, $postId);
+            if (empty($imageUrls)) {
+                return 0;
             }
 
-            Meme::updateOrCreate(
-                ['channel' => ltrim($channel, '@'), 'post_id' => $postId],
-                [
-                    'source_url' => 'https://t.me/' . ltrim($channel, '@') . '/' . $postId,
-                    'caption' => null,
-                ]
-            );
-            return true;
+            $imported = 0;
+            foreach ($imageUrls as $imageUrl) {
+                if ($this->storeImageMetadata($client, $normalizedChannel, $postId, $imageUrl)) {
+                    $imported++;
+                }
+            }
+
+            return $imported;
         } catch (\Throwable $e) {
-            return false;
+            $this->error($e);
+            return 0;
         }
     }
 
-    private function hasExactlyOneImage(string $html): bool
+    private function extractImageUrls(string $html, string $channel, int $postId): array
     {
-        // Определяем одиночную фотографию по наличию og:image и отсутствию групп/альбомов/видео/анимаций
-        $hasOg = (bool) preg_match('#<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']#i', $html);
-        if (!$hasOg) {
-            // запасной вариант: наличие одного блока photo(_wrap)
-            $countPhoto = (int) preg_match_all('/tgme_widget_message_photo(?:_wrap)?/iu', $html, $m);
-            if ($countPhoto !== 1) {
-                return false;
-            }
-        }
-        if (str_contains($html, 'tgme_widget_message_grouped')) {
-            return false;
-        }
-        return true;
-    }
-
-    private function extractImageUrl(string $html, string $channel, int $postId): ?string
-    {
+        $this->info("extract images from $postId");
         $channelQuoted = preg_quote($channel, '#');
         $post = (int) $postId;
 
@@ -157,10 +146,13 @@ class ImportMemes extends Command
                 '#tgme_widget_message_photo[^>]*style=["\'][^"\']*background-image:\s*url\((?:&quot;|\\\"|\')?([^\)"\']+)(?:&quot;|\\\"|\')?\)#i',
                 '#background-image:\s*url\((?:&quot;|\\\"|\')?([^\)"\']+)(?:&quot;|\\\"|\')?\)#i',
                 '#<img[^>]+src=["\']([^"\']+)["\'][^>]*>#i',
+                '#data-photo-full=["\']([^"\']+)["\']#i',
             ];
             foreach ($patternsImg as $pi) {
-                if (preg_match($pi, $section, $m)) {
-                    return $this->normalizeImageUrl($m[1]);
+                if (preg_match_all($pi, $section, $m)) {
+                    foreach ($m[1] as $match) {
+                        $urls[] = $this->normalizeImageUrl($match);
+                    }
                 }
             }
         }
@@ -170,12 +162,16 @@ class ImportMemes extends Command
             '#<img[^>]+src=["\']([^"\']+)["\'][^>]*>#i',
         ];
         foreach ($fallbacks as $fb) {
-            if (preg_match($fb, $html, $m2)) {
-                return $this->normalizeImageUrl($m2[1]);
+            if (preg_match_all($fb, $html, $m2)) {
+                foreach ($m2[1] as $match) {
+                    $urls[] = $this->normalizeImageUrl($match);
+                }
             }
         }
 
-        return null;
+        $urls = array_values(array_unique(array_filter($urls)));
+        //$this->info("extracted urls". implode(', ', $urls));
+        return $urls;
     }
 
     private function guessExtensionFromUrl(string $url): ?string
@@ -211,6 +207,67 @@ class ImportMemes extends Command
         return null;
     }
 
+    private function storeImageMetadata(Client $client, string $channel, int $postId, string $imageUrl): bool
+    {
+        $this->info("save image $imageUrl");
+
+        $existing = Meme::where('channel', $channel)
+            ->where('source_url', $imageUrl)
+            ->first();
+
+        if ($existing !== null && $existing->image_extension !== null && $existing->image_mime !== null) {
+            $this->info(" image $imageUrl exists");
+            return false;
+        }
+
+        try {
+            $response = $client->get($imageUrl, ['http_errors' => false, 'allow_redirects' => true]);
+        } catch (\Throwable $e) {
+            $this->info("error $e on $imageUrl");
+            return false;
+        }
+
+        if ($response->getStatusCode() !== 200) {
+            $this->info("ret code {$response->getStatusCode()} $imageUrl");
+            return false;
+        }
+
+        $body = (string) $response->getBody();
+        $mimeFromHeader = $this->normalizeMimeHeader($response->getHeaderLine('Content-Type'));
+        $mime = $mimeFromHeader ?? $this->guessMimeFromUrlOrContent($imageUrl, $body);
+
+        $extension = $this->guessExtensionFromUrl($imageUrl);
+        if ($extension === null && $mime !== null) {
+            $extension = $this->extensionFromMime($mime);
+        }
+
+        $data = [
+            'channel' => $channel,
+            'post_id' => $postId,
+            'source_url' => $imageUrl,
+            'caption' => null,
+            'image_extension' => $extension,
+            'image_mime' => $mime,
+        ];
+
+        $this->info("print data before save". print_r($data, true));
+        $this->info("ertyu34567765");
+
+        if ($existing === null) {
+            $this->info("ertyu34567765");
+            $res = Meme::create($data);
+            $this->info("created ".print_r($res, true) );
+            return true;
+        }
+        $this->info("ertyu34567765");
+        $existing->fill($data);
+        $this->info("ertyu34567765");
+        $res = $existing->save();
+        $this->info("updated ".print_r($res, true) );
+        return true;
+
+    }
+
     private function normalizeImageUrl(string $raw): string
     {
         $url = html_entity_decode(trim($raw));
@@ -223,6 +280,26 @@ class ImportMemes extends Command
             $url = 'https://t.me' . $url;
         }
         return $url;
+    }
+
+    private function normalizeMimeHeader(?string $header): ?string
+    {
+        if ($header === null || $header === '') {
+            return null;
+        }
+        $parts = explode(';', $header);
+        $mime = trim((string) $parts[0]);
+        return $mime !== '' ? strtolower($mime) : null;
+    }
+
+    private function extensionFromMime(?string $mime): ?string
+    {
+        return match ($mime) {
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => null,
+        };
     }
 }
 

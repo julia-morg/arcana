@@ -13,7 +13,10 @@ class Meme extends Model
         'channel',
         'post_id',
         'source_url',
+        'image_path',
         'caption',
+        'image_extension',
+        'image_mime',
     ];
 }
 

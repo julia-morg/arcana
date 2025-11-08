@@ -22,11 +22,14 @@ class CookieCommand implements CommandInterface
         }
 
         $prediction = $fortune->text;
-        if ($message->inGroup) {
-            $username = $message->username;
-            $mention = $username ? '@' . ltrim($username, '@') : 'вас';
-            return new Reply("Предсказание для $mention:\n$prediction");
+        if ($message->isInline){
+            return new Reply("Предсказание:\n$prediction");
         }
+//        if ($message->inGroup) {
+//            $username = $message->username;
+//            $mention = $username ? '@' . ltrim($username, '@') : 'вас';
+//            return new Reply("Предсказание для $mention:\n$prediction");
+//        }
         return new Reply("$prediction");
     }
 }
