@@ -6,6 +6,7 @@ services:
             - "${NGINX_HTTP_PORT:-80}:80"
         volumes:
             - ./ansible/templates/nginx.local.conf:/etc/nginx/nginx.conf:ro
+            - .:/var/www/html:ro
         depends_on:
             - arcana
 

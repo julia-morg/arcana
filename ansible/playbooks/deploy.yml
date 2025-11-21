@@ -11,12 +11,30 @@
         path: "{{ item }}"
         state: directory
         mode: "0755"
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
+        owner: "www-data"
+        group: "www-data"
       loop:
         - "{{ work_dir }}"
         - "{{ work_dir }}/nginx"
         - "{{ work_dir }}/arcana"
+
+    - name: Ensure www-data directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: "www-data"
+        group: "www-data"
+      loop:
+        - "{{ work_dir }}/arcana/storage"
+        - "{{ work_dir }}/arcana/storage/app"
+        - "{{ work_dir }}/arcana/storage/app/public"
+        - "{{ work_dir }}/arcana/storage/app/public/memes"
+        - "{{ work_dir }}/arcana/storage/logs"
+        - "{{ work_dir }}/arcana/storage/framework"
+        - "{{ work_dir }}/arcana/storage/framework/cache"
+        - "{{ work_dir }}/arcana/storage/framework/sessions"
+        - "{{ work_dir }}/arcana/storage/framework/views"
 
     - name: Stop services if compose file exists
       ansible.builtin.stat:

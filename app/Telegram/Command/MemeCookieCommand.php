@@ -16,40 +16,49 @@ class MemeCookieCommand implements CommandInterface
 {
     public const string COMMAND = 'meme_cookie';
     public const string DESCRIPTION = 'Мем-предсказание';
-    public const bool INLINE_ENABLED = true;
+    public const bool INLINE_ENABLED = false;
     private const array SUPPORTED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
     public function run(TgMessage $message): Reply
     {
-        $meme = Meme::whereNotNull('source_url')
-            ->where('source_url', '!=', '')
-        //    ->where('channel', '=', 'zdes_nedaleko')
+        $meme = Meme::whereNotNull('image_data')
             ->inRandomOrder()
             ->first();
 
-
-        if (!$meme || !$meme->source_url) {
+        if (!$meme || !$meme->image_data) {
             return new Reply('К сожалению, мемы пока не загружены. Попробуйте позже.');
         }
+
         $caption = trim($meme->caption ?? '');
-        if ($caption === '') {
-            $caption = 'Мем специально для @'.$message->username;
+
+        // Определяем путь к файлу
+        $extension = $meme->image_extension ?? 'jpg';
+        if (!$meme->image_path) {
+            // Генерируем путь если его нет
+            $hash = md5($meme->image_data);
+            $filename = $hash . '.' . $extension;
+            $imagePath = 'memes/' . $filename;
+            $meme->image_path = $imagePath;
+            $meme->save();
         }
 
-        $defaultProxyUrl = rtrim(config('app.url'), '/') . '/tg/cdn4/';
-        $proxyUrl = config('app.tg_proxy_base_url', $defaultProxyUrl);
+        // Проверяем существует ли файл на диске
+        $diskPath = $meme->image_path;
+        if (!Storage::disk('public')->exists($diskPath)) {
+            // Сохраняем изображение на диск
+            Storage::disk('public')->put($diskPath, $meme->image_data);
+        }
 
-        $cdnPath = ltrim(parse_url($meme->source_url, PHP_URL_PATH) ?? '', '/');
-        $photoUrl = rtrim($proxyUrl, '/') . '/' . $cdnPath;
+        // Формируем URL для отдачи через nginx
+        $photoUrl = rtrim(config('app.url'), '/') . '/memes/' . basename($diskPath);
+        $mime = $meme->image_mime ?? $this->mimeFromExtension($extension);
 
-
-        $extension = $this->resolveExtension($meme->extension, $meme->source_url);
         return new Reply(
             text: '',
             markup: null,
             photoCaption: $caption,
             photoBytesBase64: null,
-            photoMime: $mime ?? $this->mimeFromExtension($extension),
+            photoMime: $mime,
             photoUrl: $photoUrl
         );
     }

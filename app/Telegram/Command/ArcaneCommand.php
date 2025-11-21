@@ -10,7 +10,7 @@ use OpenAI;
 
 class ArcaneCommand implements CommandInterface
 {
-    public const COMMAND = 'arcane';
+    public const COMMAND = '';
     public const DESCRIPTION = 'Совет оракула';
     private string $prompt = 'Ты - муми-тролль. 
     Мумитроллинг - процесс обратный троллингу. Необходимо говорить человеку по-настоящему приятные, воодушевляющие вещи

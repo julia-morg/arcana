@@ -57,7 +57,7 @@ class Telegram
             $chatId = $update['message']['chat']['id'];
             $messageId = $update['message']['message_id'];
             $userId = $update['message']['from']['id'];
-            $userName = $update['message']['from']['username'];
+            $userName = $update['message']['from']['username'] ?? '';
             $chatType = $update['message']['chat']['type'] ?? 'private';
             $messageThreadId = $update['message']['message_thread_id'] ?? null;
 
@@ -206,12 +206,42 @@ class Telegram
 
         if (($result->photoUrl ?? '') !== '') {
             try {
-                $params['photo'] = \Telegram\Bot\FileUpload\InputFile::create($result->photoUrl);
+                // Преобразуем URL в локальный путь для прямой отправки файла
+                $photoUrl = $result->photoUrl;
+                $localPath = null;
+                
+                // Если это локальный URL, получаем путь к файлу
+                $appUrl = rtrim(config('app.url'), '/');
+                if (str_starts_with($photoUrl, $appUrl)) {
+                    $path = parse_url($photoUrl, PHP_URL_PATH);
+                    if ($path && str_starts_with($path, '/memes/')) {
+                        $filename = basename($path);
+                        $localPath = storage_path('app/public/memes/' . $filename);
+                        if (file_exists($localPath)) {
+                            // Отправляем файл напрямую, а не по URL
+                            $params['photo'] = \Telegram\Bot\FileUpload\InputFile::create($localPath, basename($localPath));
+                        } else {
+                            // Fallback на URL если файл не найден локально
+                            $params['photo'] = \Telegram\Bot\FileUpload\InputFile::create($photoUrl);
+                        }
+                    } else {
+                        $params['photo'] = \Telegram\Bot\FileUpload\InputFile::create($photoUrl);
+                    }
+                } else {
+                    // Внешний URL - используем как есть
+                    $params['photo'] = \Telegram\Bot\FileUpload\InputFile::create($photoUrl);
+                }
+                
+                if (($result->photoCaption ?? '') !== '') {
+                    $params['caption'] = $result->photoCaption;
+                }
+                
                 $this->api->sendPhoto($params);
             } catch (\Throwable $e) {
                 Log::error('Failed to send photo', [
                     'error' => $e->getMessage(),
                     'path' => $result->photoUrl,
+                    'local_path' => $localPath ?? 'N/A',
                 ]);
             }
             return;

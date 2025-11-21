@@ -11,7 +11,8 @@ class Reply
         public ?string $photoCaption = null,
         public ?string $photoBytesBase64 = null,
         public ?string $photoMime = null,
-        public ?string $photoUrl = null
+        public ?string $photoUrl = null,
+        public ?string $photoFileId = null
     ) {
     }
 }

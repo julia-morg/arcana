@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Meme;
 use GuzzleHttp\Client;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Storage;
 
 class ImportMemes extends Command
 {
@@ -22,10 +23,6 @@ class ImportMemes extends Command
             return self::SUCCESS;
         }
 
-        $this->info('Очистка таблицы мемов...');
-        Meme::query()->delete();
-        $this->info('Таблица мемов очищена.');
-
         $client = new Client([
             'base_uri' => 'https://t.me/',
             'timeout' => 30,
@@ -34,7 +31,6 @@ class ImportMemes extends Command
                 'User-Agent' => 'Mozilla/5.0 (compatible; ArcanaBot/1.0)'
             ],
         ]);
-        $oneId = $this->option('id');
 
         foreach ($channels as $channel) {
             $this->info('Канал: @' . ltrim($channel, '@'));
@@ -215,7 +211,7 @@ class ImportMemes extends Command
             ->where('source_url', $imageUrl)
             ->first();
 
-        if ($existing !== null && $existing->image_extension !== null && $existing->image_mime !== null) {
+        if ($existing !== null && $existing->image_extension !== null && $existing->image_mime !== null && $existing->image_data !== null) {
             $this->info(" image $imageUrl exists");
             return false;
         }
@@ -240,30 +236,37 @@ class ImportMemes extends Command
         if ($extension === null && $mime !== null) {
             $extension = $this->extensionFromMime($mime);
         }
+        if ($extension === null) {
+            $extension = 'jpg'; // default extension
+        }
+
+        // Генерируем уникальное имя файла на основе хеша содержимого
+        $hash = md5($body);
+        $filename = $hash . '.' . $extension;
+        $imagePath = 'memes/' . $filename;
+
+        // Сохраняем файл на диск (если еще не существует)
+        if (!Storage::disk('public')->exists($imagePath)) {
+            Storage::disk('public')->put($imagePath, $body);
+        }
 
         $data = [
             'channel' => $channel,
             'post_id' => $postId,
             'source_url' => $imageUrl,
             'caption' => null,
+            'image_path' => $imagePath,
             'image_extension' => $extension,
             'image_mime' => $mime,
+            'image_data' => $body,
         ];
 
-        $this->info("print data before save". print_r($data, true));
-        $this->info("ertyu34567765");
-
         if ($existing === null) {
-            $this->info("ertyu34567765");
-            $res = Meme::create($data);
-            $this->info("created ".print_r($res, true) );
+            Meme::create($data);
             return true;
         }
-        $this->info("ertyu34567765");
         $existing->fill($data);
-        $this->info("ertyu34567765");
-        $res = $existing->save();
-        $this->info("updated ".print_r($res, true) );
+        $existing->save();
         return true;
 
     }

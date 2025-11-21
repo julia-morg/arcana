@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('channel');
             $table->unsignedBigInteger('post_id');
-            $table->string('source_url');
+            $table->string('source_url', 1255);
             $table->string('image_path');
             $table->string('image_hash', 64)->nullable()->index();
             $table->text('caption')->nullable();
