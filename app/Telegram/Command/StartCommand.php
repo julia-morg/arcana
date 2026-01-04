@@ -21,7 +21,7 @@ class StartCommand implements CommandInterface
                 ['text' => 'Бросить кубик d4-d20', 'callback_data' => 'menu_dice'],
             ],
             [
-                ['text' => 'Мемсказание', 'callback_data' => 'meme_cookie'],
+                ['text' => 'Мемсказание', 'callback_data' => 'meme'],
                 ['text' => 'Предсказание', 'callback_data' => 'cookie'],
                 ['text' => 'Совет оракула', 'callback_data' => 'arcane'],
             ],

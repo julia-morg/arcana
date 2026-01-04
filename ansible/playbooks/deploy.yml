@@ -11,8 +11,8 @@
         path: "{{ item }}"
         state: directory
         mode: "0755"
-        owner: "www-data"
-        group: "www-data"
+        owner: "ubuntu"
+        group: "ubuntu"
       loop:
         - "{{ work_dir }}"
         - "{{ work_dir }}/nginx"

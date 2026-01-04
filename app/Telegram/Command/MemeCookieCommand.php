@@ -14,7 +14,7 @@ use function Laravel\Prompts\text;
 
 class MemeCookieCommand implements CommandInterface
 {
-    public const string COMMAND = 'meme_cookie';
+    public const string COMMAND = 'meme';
     public const string DESCRIPTION = 'Мем-предсказание';
     public const bool INLINE_ENABLED = false;
     private const array SUPPORTED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
