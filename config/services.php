@@ -38,6 +38,7 @@ return [
     'openai' => [
         'key' => env('OPENAI_API_KEY'),
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+        'fortunes_model' => env('OPENAI_FORTUNES_MODEL', 'gpt-4.1'),
     ],
 
     'memes' => [

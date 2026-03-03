@@ -13,7 +13,7 @@ services:
       - "{{ work_dir }}/certbot/conf:/etc/letsencrypt:ro"
       - "{{ work_dir }}/certbot/www:/var/www/certbot:ro"
       - "{{ work_dir }}/arcana:/var/www/html:ro"
-      - "/home/ubuntu/ttd:/var/www/ttd:ro"
+      - "/home/ubuntu/cluster:/var/www/cluster:ro"
     restart: always
 
   certbot:
