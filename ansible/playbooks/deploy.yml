@@ -4,6 +4,10 @@
 
   vars:
     work_dir: "/home/{{ ansible_user }}/arcana"
+    letsencrypt_cert_name: "juliamorg.com"
+    letsencrypt_primary_domain: "juliamorg.com"
+    letsencrypt_extra_domain: "arcana.juliamorg.com"
+    letsencrypt_email: "admin@juliamorg.com"
 
   tasks:
     - name: Ensure base directories exist
@@ -16,6 +20,9 @@
       loop:
         - "{{ work_dir }}"
         - "{{ work_dir }}/nginx"
+        - "{{ work_dir }}/certbot"
+        - "{{ work_dir }}/certbot/conf"
+        - "{{ work_dir }}/certbot/www"
         - "{{ work_dir }}/arcana"
 
     - name: Ensure www-data directories exist
@@ -81,3 +88,22 @@
         cmd: "docker compose up --build -d"
         chdir: "{{ work_dir }}"
 
+    - name: Obtain or renew LE cert with webroot (non-interactive)
+      ansible.builtin.shell:
+        cmd: >-
+          docker compose run --rm --entrypoint "" certbot
+          certbot certonly
+          --webroot -w /var/www/certbot
+          --cert-name {{ letsencrypt_cert_name }}
+          -d {{ letsencrypt_primary_domain }}
+          -d {{ letsencrypt_extra_domain }}
+          --email {{ letsencrypt_email }}
+          --agree-tos --no-eff-email --non-interactive
+          --expand
+          --keep-until-expiring
+        chdir: "{{ work_dir }}"
+
+    - name: Reload nginx after certificate operation
+      ansible.builtin.shell:
+        cmd: "docker compose exec -T nginx nginx -s reload"
+        chdir: "{{ work_dir }}"
