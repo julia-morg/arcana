@@ -107,3 +107,11 @@
       ansible.builtin.shell:
         cmd: "docker compose exec -T nginx nginx -s reload"
         chdir: "{{ work_dir }}"
+
+    - name: Ensure nginx container is restarted daily at 1 AM
+      ansible.builtin.cron:
+        name: "Restart Nginx container daily"
+        minute: "0"
+        hour: "1"
+        job: "docker restart nginx"
+
