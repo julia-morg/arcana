@@ -7,6 +7,7 @@
     letsencrypt_cert_name: "juliamorg.com"
     letsencrypt_primary_domain: "juliamorg.com"
     letsencrypt_extra_domain: "arcana.juliamorg.com"
+    letsencrypt_game_domain: "betweenthelines.juliamorg.com"
     letsencrypt_email: "admin@juliamorg.com"
 
   tasks:
@@ -97,6 +98,7 @@
           --cert-name {{ letsencrypt_cert_name }}
           -d {{ letsencrypt_primary_domain }}
           -d {{ letsencrypt_extra_domain }}
+          -d {{ letsencrypt_game_domain }}
           --email {{ letsencrypt_email }}
           --agree-tos --no-eff-email --non-interactive
           --expand

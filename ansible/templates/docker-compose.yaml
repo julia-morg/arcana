@@ -14,6 +14,7 @@ services:
       - "{{ work_dir }}/certbot/www:/var/www/certbot:ro"
       - "{{ work_dir }}/arcana:/var/www/html:ro"
       - "/home/ubuntu/cluster:/var/www/cluster:ro"
+      - "/home/ubuntu/betweenthelines:/var/www/betweenthelines:ro"
     restart: always
 
   certbot:

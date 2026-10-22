@@ -1,0 +1,88 @@
+- name: Host Between the Lines
+  hosts: all
+  become: true
+
+  vars:
+    work_dir: "/home/{{ ansible_user }}/arcana"
+    game_dir: "/home/{{ ansible_user }}/betweenthelines"
+    letsencrypt_cert_name: "juliamorg.com"
+    letsencrypt_email: "admin@juliamorg.com"
+    letsencrypt_domains:
+      - juliamorg.com
+      - arcana.juliamorg.com
+      - betweenthelines.juliamorg.com
+
+  tasks:
+    - name: Ensure game directory exists
+      ansible.builtin.file:
+        path: "{{ game_dir }}"
+        state: directory
+        mode: "0755"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Backup live nginx config
+      ansible.builtin.copy:
+        src: "{{ work_dir }}/nginx/nginx.conf"
+        dest: "{{ work_dir }}/nginx/nginx.conf.bak"
+        remote_src: true
+        mode: "0644"
+
+    - name: Install nginx config
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../templates/nginx.conf"
+        dest: "{{ work_dir }}/nginx/nginx.conf"
+        mode: "0644"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Test nginx config inside the running container
+      ansible.builtin.command:
+        cmd: docker compose exec -T nginx nginx -t
+        chdir: "{{ work_dir }}"
+      register: nginx_test
+      changed_when: false
+      failed_when: false
+
+    - name: Restore nginx config when the test fails
+      ansible.builtin.copy:
+        src: "{{ work_dir }}/nginx/nginx.conf.bak"
+        dest: "{{ work_dir }}/nginx/nginx.conf"
+        remote_src: true
+        mode: "0644"
+      when: nginx_test.rc != 0
+
+    - name: Fail when nginx config is invalid
+      ansible.builtin.fail:
+        msg: "{{ nginx_test.stderr | default(nginx_test.stdout) }}"
+      when: nginx_test.rc != 0
+
+    - name: Mount game directory into nginx
+      ansible.builtin.lineinfile:
+        path: "{{ work_dir }}/docker-compose.yaml"
+        insertafter: '/home/ubuntu/cluster:/var/www/cluster:ro'
+        line: '      - "/home/ubuntu/betweenthelines:/var/www/betweenthelines:ro"'
+
+    - name: Recreate nginx with the game volume
+      ansible.builtin.command:
+        cmd: docker compose up -d nginx
+        chdir: "{{ work_dir }}"
+
+    - name: Expand certificate with the game domain
+      ansible.builtin.shell:
+        cmd: >-
+          docker compose run --rm --entrypoint "" certbot
+          certbot certonly
+          --webroot -w /var/www/certbot
+          --cert-name {{ letsencrypt_cert_name }}
+          {% for domain in letsencrypt_domains %}-d {{ domain }} {% endfor %}
+          --email {{ letsencrypt_email }}
+          --agree-tos --no-eff-email --non-interactive
+          --expand
+          --keep-until-expiring
+        chdir: "{{ work_dir }}"
+
+    - name: Reload nginx
+      ansible.builtin.command:
+        cmd: docker compose exec -T nginx nginx -s reload
+        chdir: "{{ work_dir }}"
